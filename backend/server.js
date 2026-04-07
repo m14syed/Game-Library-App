@@ -1,0 +1,58 @@
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const dotenv = require('dotenv');
+const fs = require('fs');
+const path = require('path');
+const Game = require('./models/Game');
+const gamesRouter = require('./routes/games');
+const { initChat } = require('./socket/chat');
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 8080;
+
+app.use(cors());
+app.use(express.json());
+
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/gamelibrary')
+  .then(async () => {
+    console.log('Connected to MongoDB');
+    // Seed database if empty
+    const count = await Game.countDocuments();
+    if (count === 0) {
+      console.log('Database empty, seeding with initial data from games.json');
+      try {
+        const data = fs.readFileSync(path.join(__dirname, 'games.json'), 'utf8');
+        const games = JSON.parse(data);
+        await Game.insertMany(games);
+        console.log('Database seeded successfully');
+      } catch (err) {
+        console.error('Error seeding database:', err);
+      }
+    }
+  }).catch((err) => {
+    console.error('MongoDB connection error:', err);
+  });
+
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/messages', require('./routes/messages'));
+app.use('/api/games', gamesRouter);
+app.use('/api/igdb', require('./routes/igdb'));
+app.use('/api/tierlist', require('./routes/tierlist'));
+app.use('/api/steam',    require('./routes/steam'));
+app.use('/api/games',   require('./routes/similar'));
+app.use('/api/mood',    require('./routes/mood'));
+
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: '*', methods: ['GET', 'POST'] }
+});
+initChat(io);
+
+server.listen(PORT, () => {
+  console.log(`Server running at http://localhost:${PORT}`);
+});
